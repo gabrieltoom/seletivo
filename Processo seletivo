@@ -1,0 +1,107 @@
+start_date  = '2010-01-01' #@param {type:"date"}
+end_date    = '2021-03-01' #@param {type:"date"}
+frequencies = 'month' #@param ["day", "month", "year"]
+capital     = 657.43 #@param {type:"number"}
+
+day = False
+month = False
+year = False
+
+if frequencies == 'day': 
+    day = True
+elif frequencies == 'month':
+    month = True
+elif frequencies == 'year':
+    year = True
+
+# mudar o formato da data de yyyy-mm-dd para dd/mm/yyyy usado na url do banco central
+
+from calendar import month
+from datetime import datetime, timedelta
+
+start = datetime.strptime(start_date,"%Y-%m-%d").strftime('%d/%m/%Y')
+end   = datetime.strptime(end_date,"%Y-%m-%d").strftime('%d/%m/%Y')
+
+# baixa os dados e prepara para análises
+
+import requests
+from pandas.io.json import json_normalize
+import pandas as pd
+
+# pega os dados no BC
+url = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.11/dados?formato=json&dataInicial={}&dataFinal={}".format(start,end)
+df = pd.read_json(url)
+
+# Reformatando as datas
+start = datetime.strptime(start_date,"%Y-%m-%d")
+end   = datetime.strptime(end_date,"%Y-%m-%d")
+
+# renomeia as colunas dos dados
+df.rename(columns = {'data':'Date', 'valor':'Selic'}, inplace = True) 
+
+#não sei porque pega a primeira linha da tabela , 31/12/2009. O drop remove 
+df.drop(index=df.index[0], axis=0, inplace=True)  
+
+# converte as datas de string para datetime 
+for l in range(1,len(df)+1):
+  df.loc[l,'Date'] = datetime.strptime(df.loc[l,'Date'],"%d/%m/%Y")
+df['Date'] = pd.to_datetime(df['Date'])
+
+# os dados do BC
+df
+
+# calcula o capital acumulado 
+
+i=1
+# primeira lina da tabela
+df.loc[i,'Capital'] = capital
+df.loc[i,'Amount earned'] = 0
+# as outras linhas
+for j in range( i+1 , len(df)+1 ):
+    df.loc[j, 'Capital'] = ((1+df.loc[j-1, 'Selic']/100)*df.loc[j-1, 'Capital']) # rendimento composto
+    df.loc[j, 'Amount earned'] = df.loc[j, 'Capital'] - df.loc[1, 'Capital']     # capital atual - capital inicial
+    
+    # diário
+
+newDf = pd.DataFrame(columns = ["Date", "Capital", "Amount earned"])
+
+
+if month:
+    
+    start_period = start
+    monthCounter = 1
+    for j in range( 1 , len(df) ):
+        newDf.loc[monthCounter, "Date"] = df.loc[j, "Date"]
+        newDf.loc[monthCounter, "Capital"] = df.loc[j, "Capital"]
+        if df.loc[j, "Date"] - start_period <= timedelta(days = 30) and j != 1:
+            newDf.loc[monthCounter, "Amount earned"] += df.loc[j, "Amount earned"]
+            print("foi")
+        elif j == 1:
+            start_period = df.loc[j, "Date"]
+            newDf.loc[monthCounter, "Amount earned"] += 0
+            
+        else:
+            start_period = df.loc[j, "Date"]
+            monthCounter += 1
+            newDf.loc[monthCounter, "Amount earned"] += 0
+
+
+print (newDf)
+             
+
+    
+
+
+
+
+
+# dfday = df.copy().set_index("Date")
+# dfday
+
+# # mensal
+# dfmonth = dfday.resample("M").ffill()
+# dfmonth
+
+# # anual
+# dfyear = dfday.resample("Y").ffill()
+# dfyear
